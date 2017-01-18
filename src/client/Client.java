@@ -1,4 +1,5 @@
 package client;
+
 import java.io.*;
 import java.net.*;
 import java.util.ArrayList;
@@ -48,15 +49,7 @@ public class Client {
 
     public void run() {//отправляет на сервер
         try {
-            ///временно
-            System.out.println("write your directory:");
-            directory = keyboard.readLine();
             System.out.println("my directory is " + directory);
-            ///
-
-            System.out.println("write your name:");
-            name = keyboard.readLine();
-            out.writeUTF(name);
             //listener.start();
             System.out.println("Welcome!");
         } catch (Exception x) {
@@ -77,21 +70,14 @@ public class Client {
                     newDir = directory;
                     File dir = new File(directory);
                     readDirectory(dir);
-                    for (String letter : files) {
-                        File envelope = new File(letter);
-                        String innerLetter = letter.substring(directory.length());//чтобы убрать "from/"
-                        if (envelope.isFile())
-                            sendFile(innerLetter);
-                        else if (envelope.isDirectory()) {
-                            out.writeUTF("@directory " + innerLetter);
-                            out.flush();
-                        }
-                    }
-                }
-                else if(line.contains("@sync")){
+                    sendAll(files);
+                } else if (line.contains("@sync")) {
+                    myFiles.clear();
+                    files.clear();
                     newDir = directory;
                     File dir = new File(directory);
                     readDirectory(dir);
+                    /////////
                     for (String str : files) {//////
                         String innerStr = str.substring(directory.length());//чтобы убрать "from/"
                         myFiles.add(innerStr);
@@ -105,25 +91,50 @@ public class Client {
                     ArrayList<String> confl = new ArrayList<>();
                     receiveList(confl);
 
-                    for (Iterator<String> it = confl.iterator(); it.hasNext();){
-                        String item = it.next();
-                        System.out.println(item + " already exists. Do you want to replace it? (y/n)");
-                        String str = keyboard.readLine();
-                        if (str.equals("n"))
-                            it.remove();
+                    System.out.println("There are " + confl.size() +
+                            " already existing files.\nDo you want to replace them all?\n(n/y/choose)");
+                    String ans = keyboard.readLine();
+                    if (ans.equals("n"))
+                        confl.clear();
+                    else if (ans.equals("choose")) {
+                        for (Iterator<String> it = confl.iterator(); it.hasNext(); ) {
+                            String item = it.next();
+                            System.out.println("!\n" + item + " already exists.\nDo you want to replace it? (y/n)");
+                            String str = keyboard.readLine();
+                            if (str.equals("n"))
+                                it.remove();
+                        }
                     }
-                    for (String str : confl) System.out.println(str);
-                    //отсылаем его
+                    for (String str : confl) System.out.println(str);//проверка
+                    //отсылаем его обратно
                     sendList(confl);
-                    //принимаем файлы от сервера
-                    //обновляем список
-                }
 
-                else if (line.contains("@directory")) {
+                    //принимаем файлы от сервера
+                    int numberOfFiles = in.read();
+                    for (int i = 0; i < numberOfFiles; i++) {
+                        String string;
+                        string = in.readUTF(); // ждем пока сервер отошлет строку текста
+                        if (string.contains("@sendfile")) {//принимаем файл
+                            String fileName = string.substring("@sendfile".length() + 1);
+                            receiveFile(fileName);
+                        } else if (string.contains("@directory")) {
+                            String dirName = string.substring("@directory".length() + 1);
+                            makeDir(directory + dirName + "/");
+                        }
+                    }
+                    //отсылаем свои файлы на сервер
+                    out.write(myFiles.size());
+                    sendAll(myFiles);
+
+                    //обновляем список
+                    newDir = directory;
+                    dir = new File(directory);
+                    readDirectory(dir);
+                } else if (line.contains("@directory")) {
                     out.writeUTF(line);
                     out.flush();
 
-                }else if (line.contains("@read")) {//просто составляем список директории
+                } else if (line.contains("@read")) {//просто составляем список директории
                     newDir = directory;
                     File dir = new File(directory);
                     readDirectory(dir);
@@ -145,6 +156,19 @@ public class Client {
             x.printStackTrace();
         }
     }
+
+    private void sendAll(ArrayList<String> list) throws IOException {
+        for (String fileName : list) {
+            File envelope = new File(directory + fileName);
+            if (envelope.isFile())
+                sendFile(fileName);
+            else if (envelope.isDirectory()) {
+                out.writeUTF("@directory " + fileName);
+                out.flush();
+            }
+        }
+    }
+
     private void receiveList(ArrayList<String> list) throws IOException {
         int listSize = in.read();
         for (int i = 0; i < listSize; i++)
@@ -153,7 +177,7 @@ public class Client {
 
     private void sendList(ArrayList<String> list) throws IOException {
         out.write(list.size());
-        for (String str : list){
+        for (String str : list) {
             out.writeUTF(str);
         }
     }
@@ -193,6 +217,57 @@ public class Client {
         }
     }
 
+    private void makeDir(String path) {
+        int end = 0;
+        while (true) {
+            end = path.indexOf("/", end);
+            if (end == -1)
+                break;
+            String nameDir = path.substring(0, end);
+            File folder = new File(nameDir);
+            if (!folder.isDirectory()) {//если такой папки нет
+                folder.mkdir();
+            }
+            end++;
+        }
+    }
+
+    private void receiveFile(String fileName) throws IOException {
+
+        long size = in.readLong();
+        long testSize = size;//для получения точного размера из потока
+        System.out.println("\nreceiving file " + fileName + " size = " + size + " bytes");
+
+        int end = fileName.lastIndexOf("/");
+        if (end != -1) { //если файл не в корневой папке, а в подпапке
+            String nameDir = fileName.substring(0, end);
+            File sample = new File(directory + nameDir);
+            if (!sample.isDirectory())//такой директории нет
+                makeDir(directory + nameDir + "/");
+        }
+
+        byte[] buf = new byte[65536];
+        FileOutputStream outputFile = new FileOutputStream(directory + fileName);
+        int count;
+        long all = 0;
+        double limit = Math.ceil((double) size / 65536);
+        System.out.print("limit = " + (int) limit + "; ");
+        while (all < size) {
+            int readSize = (int) Math.min(testSize, buf.length);//чтобы не считать боьше, чем нужно
+            count = in.read(buf, 0, readSize);
+            all += count;
+            testSize -= count;
+            outputFile.write(buf, 0, count);//записываем файл
+            outputFile.flush();
+            if (all == size) {
+                System.out.println("received FULL size");
+                break;
+            }
+        }
+        System.out.println("received \"" + fileName + "\" (" + all + " bytes) from server");
+        outputFile.close();
+    }
+
     private class FromServer implements Runnable {//принимает сообщения
 
         public void run() {
@@ -216,57 +291,6 @@ public class Client {
             } finally {
                 socketClose();
             }
-        }
-
-        private void makeDir(String path) {
-            int end = 0;
-            while (true) {
-                end = path.indexOf("/", end);
-                if (end == -1)
-                    break;
-                String nameDir = path.substring(0, end);
-                File folder = new File(nameDir);
-                if (!folder.isDirectory()) {//если такой папки нет
-                    folder.mkdir();
-                }
-                end++;
-            }
-        }
-
-        private void receiveFile(String fileName) throws IOException {
-            String name = in.readUTF();
-            long size = in.readLong();
-            long testSize = size;//для получения точного размера из потока
-            System.out.println("\nreceiving file " + fileName + " size = " + size + " bytes");
-
-            int end = fileName.lastIndexOf("/");
-            if (end != -1) { //если файл не в корневой папке, а в подпапке
-                String nameDir = fileName.substring(0, end);
-                File sample = new File(directory + nameDir);
-                if (!sample.isDirectory())//такой директории нет
-                    makeDir(directory + nameDir + "/");
-            }
-
-            byte[] buf = new byte[65536];
-            FileOutputStream outputFile = new FileOutputStream(directory + fileName);
-            int count;
-            long all = 0;
-            double limit = Math.ceil((double) size / 65536);
-            System.out.print("limit = " + (int) limit + "; ");
-            while (all < size) {
-                int readSize = (int) Math.min(testSize, buf.length);//чтобы не считать боьше, чем нужно
-                count = in.read(buf, 0, readSize);
-                all += count;
-                testSize -= count;
-                outputFile.write(buf, 0, count);//записываем файл
-                outputFile.flush();
-                if (all == size) {
-                    System.out.println("received FULL size");
-                    break;
-                }
-            }
-            System.out.println("received \"" + fileName + "\" (" + all + " bytes) from " + name);
-            outputFile.close();
         }
 
     }

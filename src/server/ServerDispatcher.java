@@ -13,7 +13,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ServerDispatcher extends Thread {
     private ConcurrentHashMap<String, Socket> allClients;
     private Socket socket;
-    private String myName = "";
     public DataInputStream in;
     public DataOutputStream out;
     private SimpleDateFormat date = new SimpleDateFormat("HH:mm:ss z dd.MM.yyyy");
@@ -23,12 +22,16 @@ public class ServerDispatcher extends Thread {
     private ArrayList<String> conflictedFiles = new ArrayList<>();//список файлов, о которых надо спросить
     private String directory, newDir;
 
-    public ServerDispatcher(Socket s, ConcurrentHashMap<String, Socket> list, FileWriter log, ArrayList<String> serverFiles) {
+    public ServerDispatcher(Socket s, ConcurrentHashMap<String, Socket> list,
+                            FileWriter log, ArrayList<String> serverFiles) {
         logFile = log;
         socket = s;
         allClients = list;
         myFiles = serverFiles;
         directory = "server/";
+        newDir = directory;
+        File dir = new File(directory);
+        readDirectory(dir);//заполнили свой список
         try {
             in = new DataInputStream(socket.getInputStream());
             out = new DataOutputStream(socket.getOutputStream());
@@ -39,9 +42,8 @@ public class ServerDispatcher extends Thread {
 
     public void run() {
         try {
-            myName = in.readUTF();
-            allClients.put(myName, socket);//добавили себя в список
-            logFile.write("\nNew client \"" + myName + "\" ip: " + socket.getLocalAddress() + " port: " + socket.getPort() + " at " + date.format(new Date()));
+            logFile.write("\nNew client: ip: " + socket.getLocalAddress() +
+                    " port: " + socket.getPort() + " at " + date.format(new Date()));
             logFile.flush();
 
             while (true) {
@@ -49,9 +51,8 @@ public class ServerDispatcher extends Thread {
                     String line;
                     line = in.readUTF();
                     if (line.contains("@quit")) {
-                        sendAll(myName + " came out");
-                        allClients.remove(myName);
-                        logFile.write("\nClient \"" + myName + "\" came out at " + date.format(new Date()));
+                        logFile.write("\nClient with ip:" + socket.getLocalAddress() +
+                                " port: " + socket.getPort() + " came out at " + date.format(new Date()));
                         logFile.flush();
                         break;
 
@@ -115,15 +116,17 @@ public class ServerDispatcher extends Thread {
                     else if (line.contains("@directory")) {
                         String dirName = line.substring("@directory".length() + 1);
                         makeDir(directory + dirName + "/");
-                    } else if (line.contains("@sync")) {
+                    }
+                    else if (line.contains("@sync")) {
+                        myFiles.clear();
                         newDir = directory;
                         File dir = new File(directory);
                         readDirectory(dir);//заполнили свой список
-
                         //принимаем список клиента
                         ArrayList<String> clientList = new ArrayList<>();;
                         receiveList(clientList);
 
+                        System.out.println("\n\tclientList");
                         for (String str : clientList) {
                             if (myFiles.contains(directory + str))
                                 System.out.print(" + ");
@@ -139,10 +142,10 @@ public class ServerDispatcher extends Thread {
                         }
 
                         ////
-                        System.out.println("\nconflictedFiles");
+                        System.out.println("\n\tconflictedFiles");
                         for (String str : conflictedFiles)
                             System.out.println(str);
-                        System.out.println("\nfilesToClient");
+                        System.out.println("\n\tfilesToClient");
                         for (String str : filesToClient)
                             System.out.println(str);
                         ////
@@ -152,6 +155,36 @@ public class ServerDispatcher extends Thread {
                         //принимаем ответ
                         conflictedFiles.clear();
                         receiveList(conflictedFiles);
+                        for (String str : conflictedFiles){
+                            filesToClient.add(directory + str);
+                        }
+                        /////
+                        System.out.println("\n\tfilesToClient"); for (String str : filesToClient) System.out.println(str);
+                        //отправляем файлы из filesToClient
+                        out.write(filesToClient.size());//сколько файлов
+                        sendAll(filesToClient);
+
+                        filesToClient.clear();
+                        conflictedFiles.clear();
+                        //принимаем файлы от клиента
+                        int numberOfFiles = in.read();
+                        for(int i = 0; i < numberOfFiles; i++){
+                            String string;
+                            string = in.readUTF();
+                            if (string.contains("@sendfile")) {//принимаем файл
+                                String fileName = string.substring("@sendfile".length() + 1);
+                                receiveFile(fileName);
+                            } else if (string.contains("@directory")) {
+                                String dirName = string.substring("@directory".length() + 1);
+                                makeDir(directory + dirName + "/");
+                            }
+                        }
+                        //обновляем свой список
+                        myFiles.clear();
+                        newDir = directory;
+                        dir = new File(directory);
+                        readDirectory(dir);
+
                     }
 
 
@@ -197,8 +230,6 @@ public class ServerDispatcher extends Thread {
         FileOutputStream outputFile = new FileOutputStream(directory + fileName);
         int count;
         long all = 0;
-        double limit = Math.ceil((double) size / 65536);
-        System.out.print("limit = " + (int) limit + "; ");
         while (all < size) {
             int readSize = (int) Math.min(testSize, buf.length);//чтобы не считать боьше, чем нужно
             count = in.read(buf, 0, readSize);
@@ -211,8 +242,12 @@ public class ServerDispatcher extends Thread {
                 break;
             }
         }
-        System.out.println("received \"" + fileName + "\" (" + all + " bytes) from " + myName);
+        System.out.println("received \"" + fileName + "\" (" + all + " bytes)");
         outputFile.close();
+        logFile.write("\nReceived file \"" + fileName + "\" (" + all + " bytes) from ip: " +
+                socket.getLocalAddress() + " port: " + socket.getPort() +
+                " at " + date.format(new Date()));
+        logFile.flush();
     }
 
     private void makeDir(String path) {
@@ -230,23 +265,42 @@ public class ServerDispatcher extends Thread {
         }
     }
 
-    private void sendAll(String line) {//отправляет всем
+    private void sendAll(ArrayList<String> list) throws IOException {//отправляет все файлы из списка
+        for (String letter : list) {
+            File envelope = new File(letter);
+            String innerLetter = letter.substring(directory.length());//чтобы убрать "server/"
+            if (envelope.isFile())
+                sendFile(innerLetter);
+            else if (envelope.isDirectory()) {
+                out.writeUTF("@directory " + innerLetter);
+                out.flush();
+            }
+        }
+    }
 
-        for (Socket s : allClients.values())
-            if (!s.equals(socket))
-                try {
-                    new DataOutputStream(s.getOutputStream()).writeUTF(line);
-                } catch (IOException e) {
-                    System.out.println("Error while sending \"" + line + "\" to " + s);
-                    System.out.println("Connection with client is broken");
-                    //если кто-то плохо вышел - удалим его
-                    for (String candidate : allClients.keySet()) {
-                        if (allClients.get(candidate).equals(s)) {
-                            allClients.remove(candidate);
-                            System.out.println(candidate + " is removed");
-                        }
-                    }
-                }
+    private void sendFile(String fileName) throws IOException {
+        File file = new File(directory + fileName);
+
+        try {
+            FileInputStream inputFile = new FileInputStream(file);
+            out.writeUTF("@sendfile " + fileName); // отсылаем, если такой файл есть
+            out.flush();
+            out.writeLong(file.length());//отправляем размер
+            byte[] buf = new byte[65536];
+            int count;
+            while ((count = inputFile.read(buf)) != -1) {
+                out.write(buf, 0, count);//отсылаем файл
+                out.flush();
+            }
+            System.out.println("The file was sent");
+            inputFile.close();
+            logFile.write("\nSend file \"" + fileName + "\" (" + file.length() + " bytes) to ip: " +
+                    socket.getLocalAddress() + " port: " + socket.getPort() +
+                    " at " + date.format(new Date()));
+            logFile.flush();
+        } catch (FileNotFoundException n) {
+            System.out.println("There is no such file");
+        }
     }
 
     private void readDirectory(File folder) {

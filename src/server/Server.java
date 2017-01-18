@@ -2,6 +2,7 @@ package server;
 import java.net.*;
 import java.io.*;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -15,6 +16,7 @@ public class Server {
     private ServerSocket serverSocket;
     private FileWriter logFile;
     private SimpleDateFormat date = new SimpleDateFormat("HH:mm:ss z dd.MM.yyyy");
+    private ArrayList<String> serverFiles = new ArrayList<>();//список имеющихся у сервера файлов
 
 
     public Server(int port) throws IOException {
@@ -35,7 +37,7 @@ public class Server {
             try {
                 Socket socket = serverSocket.accept();    //подсоединение
                 System.out.println("New client");
-                ServerDispatcher client = new ServerDispatcher(socket, clients, logFile);
+                ServerDispatcher client = new ServerDispatcher(socket, clients, logFile, serverFiles);
                 client.start(); //запускаем
             } catch (IOException e) {
                 e.printStackTrace();

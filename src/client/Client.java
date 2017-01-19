@@ -50,7 +50,21 @@ public class Client {
     public void run() {//отправляет на сервер
         try {
             System.out.println("my directory is " + directory);
+            System.out.println("write your name:");
+            name = keyboard.readLine();
+            out.writeUTF(name);
             System.out.println("Welcome!");
+            receiveList(dynamicFolders);
+            if (dynamicFolders.size() != 0){
+                System.out.println("You have " + dynamicFolders.size() + " dynamic directories.\n" +
+                        "Please specify their paths:");
+                for (int i = 0; i < dynamicFolders.size(); i++){
+                    System.out.println(dynamicFolders.get(i).substring("dynamic_".length()) + ": ");
+                    String path = keyboard.readLine();
+                    dynamicFolders.set(i, path);
+                }
+                System.out.println("OK.");
+            }
         } catch (Exception x) {
             x.printStackTrace();
         }
@@ -77,9 +91,7 @@ public class Client {
                 } else if (line.contains("@deleteDF")) {
                     String path = line.substring("@deleteDF".length() + 1);
                     dynamicFolders.remove(path);
-                }
-
-                else if (line.contains("@sync")) {
+                } else if (line.contains("@sync")) {
                     out.writeUTF(line);
 
                     //отправляем серверу свой список, чтобы он удалил того, чего у нас уже нет

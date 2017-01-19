@@ -11,9 +11,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * здесь происходит взаимодействие с клиентом
  */
 class ServerDispatcher extends Thread {
+    private ConcurrentHashMap<String, ArrayList<String>> allClients;
     private Socket socket;
     public DataInputStream in;
     public DataOutputStream out;
+    private String myName = "";
     private SimpleDateFormat date = new SimpleDateFormat("HH:mm:ss z dd.MM.yyyy");
     private FileWriter logFile;
     private ArrayList<String> myFiles;//список имеющихся у сервера файлов
@@ -24,11 +26,13 @@ class ServerDispatcher extends Thread {
     private String directory, newDir;
 
     public ServerDispatcher(Socket s, ArrayList<String> listDF,
+                            ConcurrentHashMap<String, ArrayList<String>> clients,
                             FileWriter log, ArrayList<String> serverFiles) {
         logFile = log;
         socket = s;
         myFiles = serverFiles;
         dynamicFolders = listDF;
+        allClients = clients;
         directory = "server/";
         newDir = directory;
         File dir = new File(directory);
@@ -43,7 +47,13 @@ class ServerDispatcher extends Thread {
 
     public void run() {
         try {
-            logFile.write("\nNew client: ip: " + socket.getLocalAddress() +
+            myName = in.readUTF();
+            if (allClients.containsKey(myName))//если мы уже заходили
+                myDynamicFolders = allClients.get(myName);
+            else//если первый раз
+                allClients.put(myName, myDynamicFolders);
+            sendList(myDynamicFolders);
+            logFile.write("\nNew client \"" + myName + "\" ip: " + socket.getLocalAddress() +
                     " port: " + socket.getPort() + " at " + date.format(new Date()));
             logFile.flush();
 
@@ -52,7 +62,7 @@ class ServerDispatcher extends Thread {
                     String line;
                     line = in.readUTF();
                     if (line.contains("@quit")) {
-                        logFile.write("\nClient with ip:" + socket.getLocalAddress() +
+                        logFile.write("\nClient \"" + myName + "\" ip:" + socket.getLocalAddress() +
                                 " port: " + socket.getPort() + " came out at " + date.format(new Date()));
                         logFile.flush();
                         break;
@@ -63,14 +73,12 @@ class ServerDispatcher extends Thread {
                     } else if (line.contains("@directory")) {
                         String dirName = line.substring("@directory".length() + 1);
                         makeDir(directory + dirName + "/");
-                    }
-
-                    else if (line.contains("@sync")) {
+                    } else if (line.contains("@sync")) {
                         ArrayList<String> tmpClient = new ArrayList<>();
                         receiveList(tmpClient);//список папок клиента
 
-                        for (String name : myDynamicFolders){//удаляем уже отключенные
-                            if(!tmpClient.contains(name)) {
+                        for (String name : myDynamicFolders) {//удаляем уже отключенные
+                            if (!tmpClient.contains(name)) {
                                 File file = new File(directory + name);
                                 deleteDir(file);
                                 dynamicFolders.remove(name);
@@ -90,7 +98,7 @@ class ServerDispatcher extends Thread {
                         for (int i = 0; i < myDynamicFolders.size(); i++) {//принимаем файлы
                             String folder = in.readUTF();//имя папки
                             int numberOfFiles = in.read();
-                            for (int j = 0; j < numberOfFiles; j++){
+                            for (int j = 0; j < numberOfFiles; j++) {
                                 String string;
                                 string = in.readUTF();
                                 if (string.contains("@sendfile")) {//принимаем файл
@@ -110,13 +118,13 @@ class ServerDispatcher extends Thread {
                         readDirectory(dir);//заполнили свой список
 
                         //удаляем динам. папки этого клиента
-                        for (int i = 0; i < myFiles.size(); i++){
+                        for (int i = 0; i < myFiles.size(); i++) {
                             int begin = directory.length();
                             int slash = myFiles.get(i).indexOf("/", begin + 1);
                             if (slash == -1)
                                 slash = myFiles.get(i).length();
                             String name = myFiles.get(i).substring(begin, slash);
-                            if (myDynamicFolders.contains(name)){
+                            if (myDynamicFolders.contains(name)) {
                                 myFiles.remove(i);
                                 i--;
                             }

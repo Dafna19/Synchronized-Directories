@@ -19,6 +19,7 @@ public class Server {
     private SimpleDateFormat date = new SimpleDateFormat("HH:mm:ss z dd.MM.yyyy");
     private ArrayList<String> serverFiles = new ArrayList<>();//список имеющихся у сервера файлов
     private ArrayList<String> dynamicFolders = new ArrayList<>();
+    private ConcurrentHashMap<String, ArrayList<String>> clients = new ConcurrentHashMap<>();
 
 
     public Server(int port) throws IOException {
@@ -40,7 +41,7 @@ public class Server {
             try {
                 Socket socket = serverSocket.accept();    //подсоединение
                 System.out.println("New client");
-                ServerDispatcher client = new ServerDispatcher(socket, dynamicFolders, logFile, serverFiles);
+                ServerDispatcher client = new ServerDispatcher(socket, dynamicFolders, clients, logFile, serverFiles);
                 client.start(); //запускаем
             } catch (IOException e) {
                 e.printStackTrace();

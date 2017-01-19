@@ -2,7 +2,9 @@ package client;
 
 import java.io.*;
 import java.net.*;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.Iterator;
 
 /**
@@ -18,12 +20,13 @@ public class Client {
     private DataInputStream in;
     private DataOutputStream out;
     private BufferedReader keyboard;
-    private Thread listener;
+    private FileWriter logFile;
     private String directory, newDir;
     private ArrayList<String> files = new ArrayList<>();
     private ArrayList<String> myFiles = new ArrayList<>();//список имеющихся файлов, его показываем серверу
     private ArrayList<String> dynamicFolders = new ArrayList<>();//свои папки
     private ArrayList<String> acquiredDynamicFolders = new ArrayList<>();//чужие папки
+    private SimpleDateFormat date = new SimpleDateFormat("HH:mm:ss z dd.MM.yyyy");
 
     public Client(String adr, int port, String dir) throws IOException {
         InetAddress ipAddress = InetAddress.getByName(adr); // создаем объект который отображает вышеописанный IP-адрес
@@ -52,8 +55,14 @@ public class Client {
             System.out.println("my directory is " + directory);
             System.out.println("write your name:");
             name = keyboard.readLine();
+            logFile = new FileWriter(name + "Log.txt", true);
             out.writeUTF(name);
             System.out.println("Welcome!");
+            logFile.write("\n\nClient connected to server ip: " + socket.getInetAddress() + " at " + date.format(new Date()));
+            logFile.flush();
+            logFile.write("\nClient started at directory " + directory + " at " + date.format(new Date()));
+            logFile.flush();
+
             receiveList(dynamicFolders);
             if (dynamicFolders.size() != 0) {
                 System.out.println("You have " + dynamicFolders.size() + " dynamic directories.\n" +
@@ -80,12 +89,16 @@ public class Client {
                     if (index < line.length()) {
                         String path = line.substring(index);
                         dynamicFolders.add(path);
+                        logFile.write("\nAdded dynamic directory " + path);
+                        logFile.flush();
                     }
                 } else if (line.contains("@deleteDF")) {
                     int index = "@deleteDF".length() + 1;
                     if (index < line.length()) {
                         String path = line.substring(index);
                         dynamicFolders.remove(path);
+                        logFile.write("\nDeleted dynamic directory " + path);
+                        logFile.flush();
                     }
                 } else if (line.contains("@sync")) {
                     out.writeUTF(line);
@@ -105,6 +118,8 @@ public class Client {
                         if (!serverDF.contains(item)) {//item - dynamic_name
                             File file = new File(directory + item);
                             deleteDir(file);
+                            logFile.write("\nDeleted directory " + item);
+                            logFile.flush();
                         }
                     }
                     acquiredDynamicFolders.clear();
@@ -113,28 +128,17 @@ public class Client {
                         if (!dynListForServer.contains(item))
                             acquiredDynamicFolders.add(item);
                     }
-                    /////
-                    System.out.println(" - ADF : " + acquiredDynamicFolders);
-                    System.out.println(" - DF : " + dynamicFolders);
-                    /////
 
                     //отправляем сами файлы
                     for (int i = 0; i < dynamicFolders.size(); i++) {
                         newDir = dynamicFolders.get(i) + "/";
-                        System.out.println("Directory: " + newDir);
                         files.clear();
                         File dFile = new File(newDir);
                         readDirectory(dFile);//создаём список того, что находится в папке
                         for (int j = 0; j < files.size(); j++) {
                             files.set(j, files.get(j).substring(newDir.length()));//имя самого файла
                         }
-                        ///
-                        System.out.println("- in DynDir:");
-                        for (String s : files) System.out.println(s);
-                        System.out.println("- end DynDir");
-                        System.out.println("- in dynListForServer:");
-                        for (String s : dynListForServer) System.out.println(s);
-                        System.out.println("- end dynListForServer\n");
+
                         ////отправляем файлы из списка
                         out.writeUTF(dynListForServer.get(i));//имя папки на сервере
                         out.write(files.size());
@@ -150,7 +154,6 @@ public class Client {
                     for (String str : files) {
                         String innerStr = str.substring(directory.length());//чтобы убрать "from/"
                         myFiles.add(innerStr);
-                        System.out.println(innerStr);///////
                     }//////////////
 
                     //отправляем список
@@ -160,18 +163,20 @@ public class Client {
                     ArrayList<String> confl = new ArrayList<>();
                     receiveList(confl);
 
-                    System.out.println("There are " + confl.size() +
-                            " already existing files.\nDo you want to update them all?\n(n/y/choose)");
-                    String ans = keyboard.readLine();
-                    if (ans.equals("n"))
-                        confl.clear();
-                    else if (ans.equals("choose")) {
-                        for (Iterator<String> it = confl.iterator(); it.hasNext(); ) {
-                            String item = it.next();
-                            System.out.println("!\n" + item + " already exists.\nDo you want to update it? (y/n)");
-                            String str = keyboard.readLine();
-                            if (str.equals("n"))
-                                it.remove();
+                    if (confl.size() > 0) {
+                        System.out.println("There are " + confl.size() +
+                                " already existing files.\nDo you want to update them all?\n(n/y/choose)");
+                        String ans = keyboard.readLine();
+                        if (ans.equals("n"))
+                            confl.clear();
+                        else if (ans.equals("choose")) {
+                            for (Iterator<String> it = confl.iterator(); it.hasNext(); ) {
+                                String item = it.next();
+                                System.out.println("!\n" + item + " already exists.\nDo you want to update it? (y/n)");
+                                String str = keyboard.readLine();
+                                if (str.equals("n"))
+                                    it.remove();
+                            }
                         }
                     }
                     for (String str : confl) System.out.println(str);//проверка
@@ -214,10 +219,6 @@ public class Client {
                         myFiles.add(innerStr);
                         System.out.println(innerStr);
                     }
-                } else if (line.contains("@delete")) {
-                    String fileName = line.substring("@delete".length() + 1);
-                    File test = new File(directory + fileName);
-                    deleteDir(test);
                 }
 
                 if (line.equals("@quit")) {
@@ -270,8 +271,13 @@ public class Client {
                 out.write(buf, 0, count);//отсылаем файл
                 out.flush();
             }
-            System.out.println("The file was sent");
+            //System.out.println("The file was sent");
             inputFile.close();
+            logFile.write("\nSend file \"" + fileName + "\" (" + file.length() + " bytes) to ip: " +
+                    socket.getLocalAddress() + " port: " + socket.getPort() +
+                    " at " + date.format(new Date()));
+            logFile.flush();
+
         } catch (FileNotFoundException n) {
             System.out.println("There is no such file");
         }
@@ -324,7 +330,7 @@ public class Client {
 
         long size = in.readLong();
         long testSize = size;//для получения точного размера из потока
-        System.out.println("\nreceiving file " + fileName + " size = " + size + " bytes");
+        //System.out.println("\nreceiving file " + fileName + " size = " + size + " bytes");
 
         int end = fileName.lastIndexOf("/");
         if (end != -1) { //если файл не в корневой папке, а в подпапке
@@ -338,8 +344,6 @@ public class Client {
         FileOutputStream outputFile = new FileOutputStream(directory + fileName);
         int count;
         long all = 0;
-        double limit = Math.ceil((double) size / 65536);
-        System.out.print("limit = " + (int) limit + "; ");
         while (all < size) {
             int readSize = (int) Math.min(testSize, buf.length);//чтобы не считать боьше, чем нужно
             count = in.read(buf, 0, readSize);
@@ -348,12 +352,17 @@ public class Client {
             outputFile.write(buf, 0, count);//записываем файл
             outputFile.flush();
             if (all == size) {
-                System.out.println("received FULL size");
+                //System.out.println("received FULL size");
                 break;
             }
         }
-        System.out.println("received \"" + fileName + "\" (" + all + " bytes) from server");
+        //System.out.println("received \"" + fileName + "\" (" + all + " bytes) from server");
         outputFile.close();
+        logFile.write("\nReceived file \"" + fileName + "\" (" + all + " bytes) from ip: " +
+                socket.getLocalAddress() + " port: " + socket.getPort() +
+                " at " + date.format(new Date()));
+        logFile.flush();
+
     }
 
 }

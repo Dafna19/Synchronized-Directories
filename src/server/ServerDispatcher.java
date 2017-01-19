@@ -91,10 +91,7 @@ class ServerDispatcher extends Thread {
                             myDynamicFolders.add(item);//чтобы себе не отправлять
                         }
                         sendList(dynamicFolders);//отправка своего общего списка
-                        ////
-                        System.out.println(" - MDF : " + myDynamicFolders);
-                        System.out.println(" - DF : " + dynamicFolders);
-                        ////
+
                         for (int i = 0; i < myDynamicFolders.size(); i++) {//принимаем файлы
                             String folder = in.readUTF();//имя папки
                             int numberOfFiles = in.read();
@@ -134,12 +131,12 @@ class ServerDispatcher extends Thread {
                         ArrayList<String> clientList = new ArrayList<>();
                         receiveList(clientList);
 
-                        System.out.println("\n\tclientList");
+                        /*System.out.println("\n\tclientList");
                         for (String str : clientList) {
                             if (myFiles.contains(directory + str))
                                 System.out.print(" + ");
                             System.out.println(str);//проверка
-                        }
+                        }*/
 
                         for (String servFile : myFiles) {
                             String file = servFile.substring(directory.length());
@@ -149,14 +146,7 @@ class ServerDispatcher extends Thread {
                                 filesToClient.add(servFile);
                         }
 
-                        ////
-                        System.out.println("\n\tconflictedFiles");
-                        for (String str : conflictedFiles)
-                            System.out.println(str);
-                        System.out.println("\n\tfilesToClient");
-                        for (String str : filesToClient)
-                            System.out.println(str);
-                        ////
+
 
                         //отправляем список конфликтных
                         sendList(conflictedFiles);
@@ -166,9 +156,6 @@ class ServerDispatcher extends Thread {
                         for (String str : conflictedFiles) {
                             filesToClient.add(directory + str);
                         }
-                        /////
-                        System.out.println("\n\tfilesToClient");
-                        for (String str : filesToClient) System.out.println(str);
                         //отправляем файлы из filesToClient
                         out.write(filesToClient.size());//сколько файлов
                         sendAll(filesToClient);
@@ -225,7 +212,7 @@ class ServerDispatcher extends Thread {
     private void receiveFile(String fileName) throws IOException {
         long size = in.readLong();
         long testSize = size;//для получения точного размера из потока
-        System.out.println("\nreceiving file " + fileName + " size = " + size + " bytes");
+        //System.out.println("\nreceiving file " + fileName + " size = " + size + " bytes");
 
         int end = fileName.lastIndexOf("/");
         if (end != -1) { //если файл не в корневой папке, а в подпапке
@@ -247,11 +234,11 @@ class ServerDispatcher extends Thread {
             outputFile.write(buf, 0, count);//записываем файл
             outputFile.flush();
             if (all == size) {
-                System.out.println("received FULL size");
+               // System.out.println("received FULL size");
                 break;
             }
         }
-        System.out.println("received \"" + fileName + "\" (" + all + " bytes)");
+       // System.out.println("received \"" + fileName + "\" (" + all + " bytes)");
         outputFile.close();
         logFile.write("\nReceived file \"" + fileName + "\" (" + all + " bytes) from ip: " +
                 socket.getLocalAddress() + " port: " + socket.getPort() +
@@ -301,7 +288,7 @@ class ServerDispatcher extends Thread {
                 out.write(buf, 0, count);//отсылаем файл
                 out.flush();
             }
-            System.out.println("The file was sent");
+            //System.out.println("The file was sent");
             inputFile.close();
             logFile.write("\nSend file \"" + fileName + "\" (" + file.length() + " bytes) to ip: " +
                     socket.getLocalAddress() + " port: " + socket.getPort() +

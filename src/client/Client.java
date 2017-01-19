@@ -47,7 +47,7 @@ public class Client {
         }
     }
 
-    public void run() {//отправляет на сервер
+    public void run() {//отправляет на серверC:\Users\Наташа\Downloads\2
         try {
             System.out.println("my directory is " + directory);
             System.out.println("write your name:");
@@ -55,10 +55,10 @@ public class Client {
             out.writeUTF(name);
             System.out.println("Welcome!");
             receiveList(dynamicFolders);
-            if (dynamicFolders.size() != 0){
+            if (dynamicFolders.size() != 0) {
                 System.out.println("You have " + dynamicFolders.size() + " dynamic directories.\n" +
                         "Please specify their paths:");
-                for (int i = 0; i < dynamicFolders.size(); i++){
+                for (int i = 0; i < dynamicFolders.size(); i++) {
                     System.out.println(dynamicFolders.get(i).substring("dynamic_".length()) + ": ");
                     String path = keyboard.readLine();
                     dynamicFolders.set(i, path);
@@ -75,22 +75,18 @@ public class Client {
                 if (socket.isClosed())
                     break;
 
-               /* if (line.contains("@sendfile")) {
-                    String fileName = line.substring("@sendfile".length() + 1);
-                    sendFile(fileName);
-
-                } else if (line.contains("@listdirectory")) {//проход по директории и её отправка
-                    newDir = directory;
-                    File dir = new File(directory);
-                    readDirectory(dir);
-                    sendAll(files);
-                } else*/
                 if (line.contains("@addDF")) {
-                    String path = line.substring("@addDF".length() + 1);
-                    dynamicFolders.add(path);
+                    int index = "@addDF".length() + 1;
+                    if (index < line.length()) {
+                        String path = line.substring(index);
+                        dynamicFolders.add(path);
+                    }
                 } else if (line.contains("@deleteDF")) {
-                    String path = line.substring("@deleteDF".length() + 1);
-                    dynamicFolders.remove(path);
+                    int index = "@deleteDF".length() + 1;
+                    if (index < line.length()) {
+                        String path = line.substring(index);
+                        dynamicFolders.remove(path);
+                    }
                 } else if (line.contains("@sync")) {
                     out.writeUTF(line);
 

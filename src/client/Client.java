@@ -4,7 +4,6 @@ import java.io.*;
 import java.net.*;
 import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.Scanner;
 
 /**
  * Адреса и порты задаются через командную строку:
@@ -21,8 +20,10 @@ public class Client {
     private BufferedReader keyboard;
     private Thread listener;
     private String directory, newDir;
-    ArrayList<String> files = new ArrayList<>();
+    private ArrayList<String> files = new ArrayList<>();
     private ArrayList<String> myFiles = new ArrayList<>();//список имеющихся файлов, его показываем серверу
+    private ArrayList<String> dynamicFolders = new ArrayList<>();//свои папки
+    private ArrayList<String> acquiredDynamicFolders = new ArrayList<>();//чужие папки
 
     public Client(String adr, int port, String dir) throws IOException {
         InetAddress ipAddress = InetAddress.getByName(adr); // создаем объект который отображает вышеописанный IP-адрес
@@ -30,7 +31,6 @@ public class Client {
         in = new DataInputStream(socket.getInputStream());
         out = new DataOutputStream(socket.getOutputStream());
         keyboard = new BufferedReader(new InputStreamReader(System.in));
-        //listener = new Thread(new FromServer());
         directory = dir;
     }
 
@@ -50,7 +50,6 @@ public class Client {
     public void run() {//отправляет на сервер
         try {
             System.out.println("my directory is " + directory);
-            //listener.start();
             System.out.println("Welcome!");
         } catch (Exception x) {
             x.printStackTrace();
@@ -62,7 +61,7 @@ public class Client {
                 if (socket.isClosed())
                     break;
 
-                if (line.contains("@sendfile")) {
+               /* if (line.contains("@sendfile")) {
                     String fileName = line.substring("@sendfile".length() + 1);
                     sendFile(fileName);
 
@@ -71,19 +70,81 @@ public class Client {
                     File dir = new File(directory);
                     readDirectory(dir);
                     sendAll(files);
-                } else if (line.contains("@sync")) {
+                } else*/
+                if (line.contains("@addDF")) {
+                    String path = line.substring("@addDF".length() + 1);
+                    dynamicFolders.add(path);
+                } else if (line.contains("@deleteDF")) {
+                    String path = line.substring("@deleteDF".length() + 1);
+                    dynamicFolders.remove(path);
+                }
+
+                else if (line.contains("@sync")) {
+                    out.writeUTF(line);
+
+                    //отправляем серверу свой список, чтобы он удалил того, чего у нас уже нет
+                    ArrayList<String> dynListForServer = new ArrayList<>();
+                    for (String item : dynamicFolders) {//C:\...\Kurs\adds
+                        int slash = item.lastIndexOf("\\");
+                        String name = item.substring(slash + 1);
+                        dynListForServer.add("dynamic_" + name);
+                    }
+                    sendList(dynListForServer);
+                    //теперь проверка динамич.папок от сервера
+                    ArrayList<String> serverDF = new ArrayList<>();
+                    receiveList(serverDF);
+                    for (String item : acquiredDynamicFolders) {
+                        if (!serverDF.contains(item)) {//item - dynamic_name
+                            File file = new File(directory + item);
+                            deleteDir(file);
+                        }
+                    }
+                    acquiredDynamicFolders.clear();
+
+                    for (String item : serverDF) {
+                        if (!dynListForServer.contains(item))
+                            acquiredDynamicFolders.add(item);
+                    }
+                    /////
+                    System.out.println(" - ADF : " + acquiredDynamicFolders);
+                    System.out.println(" - DF : " + dynamicFolders);
+                    /////
+
+                    //отправляем сами файлы
+                    for (int i = 0; i < dynamicFolders.size(); i++) {
+                        newDir = dynamicFolders.get(i) + "/";
+                        System.out.println("Directory: " + newDir);
+                        files.clear();
+                        File dFile = new File(newDir);
+                        readDirectory(dFile);//создаём список того, что находится в папке
+                        for (int j = 0; j < files.size(); j++) {
+                            files.set(j, files.get(j).substring(newDir.length()));//имя самого файла
+                        }
+                        ///
+                        System.out.println("- in DynDir:");
+                        for (String s : files) System.out.println(s);
+                        System.out.println("- end DynDir");
+                        System.out.println("- in dynListForServer:");
+                        for (String s : dynListForServer) System.out.println(s);
+                        System.out.println("- end dynListForServer\n");
+                        ////отправляем файлы из списка
+                        out.writeUTF(dynListForServer.get(i));//имя папки на сервере
+                        out.write(files.size());
+                        sendAll(files, newDir);
+                    }
+
+
                     myFiles.clear();
                     files.clear();
                     newDir = directory;
                     File dir = new File(directory);
                     readDirectory(dir);
-                    /////////
-                    for (String str : files) {//////
+                    for (String str : files) {
                         String innerStr = str.substring(directory.length());//чтобы убрать "from/"
                         myFiles.add(innerStr);
-                        System.out.println(innerStr);
+                        System.out.println(innerStr);///////
                     }//////////////
-                    out.writeUTF(line);
+
                     //отправляем список
                     sendList(myFiles);
 
@@ -92,14 +153,14 @@ public class Client {
                     receiveList(confl);
 
                     System.out.println("There are " + confl.size() +
-                            " already existing files.\nDo you want to replace them all?\n(n/y/choose)");
+                            " already existing files.\nDo you want to update them all?\n(n/y/choose)");
                     String ans = keyboard.readLine();
                     if (ans.equals("n"))
                         confl.clear();
                     else if (ans.equals("choose")) {
                         for (Iterator<String> it = confl.iterator(); it.hasNext(); ) {
                             String item = it.next();
-                            System.out.println("!\n" + item + " already exists.\nDo you want to replace it? (y/n)");
+                            System.out.println("!\n" + item + " already exists.\nDo you want to update it? (y/n)");
                             String str = keyboard.readLine();
                             if (str.equals("n"))
                                 it.remove();
@@ -124,7 +185,7 @@ public class Client {
                     }
                     //отсылаем свои файлы на сервер
                     out.write(myFiles.size());
-                    sendAll(myFiles);
+                    sendAll(myFiles, directory);
 
                     //обновляем список
                     newDir = directory;
@@ -135,6 +196,8 @@ public class Client {
                     out.flush();
 
                 } else if (line.contains("@read")) {//просто составляем список директории
+                    files.clear();
+                    myFiles.clear();
                     newDir = directory;
                     File dir = new File(directory);
                     readDirectory(dir);
@@ -143,8 +206,11 @@ public class Client {
                         myFiles.add(innerStr);
                         System.out.println(innerStr);
                     }
+                } else if (line.contains("@delete")) {
+                    String fileName = line.substring("@delete".length() + 1);
+                    File test = new File(directory + fileName);
+                    deleteDir(test);
                 }
-
 
                 if (line.equals("@quit")) {
                     out.writeUTF(line);
@@ -157,11 +223,11 @@ public class Client {
         }
     }
 
-    private void sendAll(ArrayList<String> list) throws IOException {
+    private void sendAll(ArrayList<String> list, String directory) throws IOException {
         for (String fileName : list) {
             File envelope = new File(directory + fileName);
             if (envelope.isFile())
-                sendFile(fileName);
+                sendFile(fileName, directory);
             else if (envelope.isDirectory()) {
                 out.writeUTF("@directory " + fileName);
                 out.flush();
@@ -182,7 +248,7 @@ public class Client {
         }
     }
 
-    private void sendFile(String fileName) throws IOException {
+    private void sendFile(String fileName, String directory) throws IOException {
         File file = new File(directory + fileName);
 
         try {
@@ -232,6 +298,20 @@ public class Client {
         }
     }
 
+    private void deleteDir(File dir) {
+        if (dir.isDirectory()) {
+            File[] list = dir.listFiles();
+            if (list != null) {
+                for (File file : list) {
+                    deleteDir(file);
+                }
+            }
+            dir.delete();
+        } else {
+            dir.delete();
+        }
+    }
+
     private void receiveFile(String fileName) throws IOException {
 
         long size = in.readLong();
@@ -266,33 +346,6 @@ public class Client {
         }
         System.out.println("received \"" + fileName + "\" (" + all + " bytes) from server");
         outputFile.close();
-    }
-
-    private class FromServer implements Runnable {//принимает сообщения
-
-        public void run() {
-            try {
-                while (true) {
-                    String line;
-                    line = in.readUTF(); // ждем пока сервер отошлет строку текста
-
-                    if (line.contains("@sendfile")) {//принимаем файл
-                        String fileName = line.substring("@sendfile".length() + 1);
-                        receiveFile(fileName);
-
-                    } else if (line.contains("@directory")) {
-                        String dirName = line.substring("@directory".length() + 1);
-                        makeDir(directory + dirName + "/");
-                    } else
-                        System.out.println(line);
-                }
-            } catch (Exception e) {
-                socketClose();
-            } finally {
-                socketClose();
-            }
-        }
-
     }
 
 }

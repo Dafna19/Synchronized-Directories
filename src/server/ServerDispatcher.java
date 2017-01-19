@@ -8,10 +8,9 @@ import java.util.Date;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * здесь происходит пересылка другим клиентам
+ * здесь происходит взаимодействие с клиентом
  */
-public class ServerDispatcher extends Thread {
-    private ConcurrentHashMap<String, Socket> allClients;
+class ServerDispatcher extends Thread {
     private Socket socket;
     public DataInputStream in;
     public DataOutputStream out;
@@ -20,14 +19,16 @@ public class ServerDispatcher extends Thread {
     private ArrayList<String> myFiles;//список имеющихся у сервера файлов
     private ArrayList<String> filesToClient = new ArrayList<>();//список файлов, которые надо отправить
     private ArrayList<String> conflictedFiles = new ArrayList<>();//список файлов, о которых надо спросить
+    private ArrayList<String> dynamicFolders;//все динам.папки
+    private ArrayList<String> myDynamicFolders = new ArrayList<>();//папки этого клиента
     private String directory, newDir;
 
-    public ServerDispatcher(Socket s, ConcurrentHashMap<String, Socket> list,
+    public ServerDispatcher(Socket s, ArrayList<String> listDF,
                             FileWriter log, ArrayList<String> serverFiles) {
         logFile = log;
         socket = s;
-        allClients = list;
         myFiles = serverFiles;
+        dynamicFolders = listDF;
         directory = "server/";
         newDir = directory;
         File dir = new File(directory);
@@ -59,71 +60,70 @@ public class ServerDispatcher extends Thread {
                     } else if (line.contains("@sendfile")) {//принимаем файл
                         String fileName = line.substring("@sendfile".length() + 1);
                         receiveFile(fileName);
-                    }
-
-                    /* else if (line.contains("@sendfile")) {//отправляем файл
-                        sendAll(line);//переправляем всем
-                        //хотя в принципе, отвалившийся должен удалиться уже здесь
-                        sendAll(myName);
-                        long size = in.readLong();
-                        long testSize = size;//для получения точного размера из потока
-                        System.out.println(" size = " + size);
-                        //рассылаем всем размер
-                        for (Socket s : allClients.values())
-                            if (!s.equals(socket)) {//если кто-то плохо вышел, здесь упадёт
-                                try {
-                                    new DataOutputStream(s.getOutputStream()).writeLong(size);
-                                } catch (IOException e) {
-                                    for (String candidate : allClients.keySet()) {
-                                        if (allClients.get(candidate).equals(s)) {
-                                            allClients.remove(candidate);
-                                            System.out.println(candidate + " is removed");
-                                        }//теперь не упадёт
-                                    }
-                                }
-                            }
-
-                        byte[] buf = new byte[65536];
-                        int count;
-                        long all = 0;
-                        double limit = Math.ceil((double) size / 65536);//количество необходимых пакетов
-                        System.out.println("limit = " + (int) limit);
-                        int i = 0;
-                        while (true) {
-                            int readSize = (int) Math.min(testSize, buf.length);//чтобы не считать боьше, чем нужно
-                            count = in.read(buf, 0, readSize);//сколько прочитали в пакете
-                            all += count;
-                            testSize -= count;
-                            System.out.println(" count = " + count + "  for read = " + readSize + "  all = " + all + "  i = " + i + "  left = " + testSize);
-                            for (Socket s : allClients.values())
-                                if (!s.equals(socket))
-                                    try {
-                                        //посылаем всем файл по частям
-                                        new DataOutputStream(s.getOutputStream()).write(buf, 0, count);
-                                    } catch (SocketException z) {
-                                        System.out.println(" can't send file ");
-                                        z.printStackTrace();
-                                        break;
-                                    }
-                            if (all == size)
-                                break;
-                            i++;
-                        }
-                        System.out.println(" sent " + all + " bytes");
-                        logFile.write("\nClient \"" + myName + "\" sent a file (" + all + " bytes) at " + date.format(new Date()));
-
-                    } */
-                    else if (line.contains("@directory")) {
+                    } else if (line.contains("@directory")) {
                         String dirName = line.substring("@directory".length() + 1);
                         makeDir(directory + dirName + "/");
                     }
+
                     else if (line.contains("@sync")) {
+                        ArrayList<String> tmpClient = new ArrayList<>();
+                        receiveList(tmpClient);//список папок клиента
+
+                        for (String name : myDynamicFolders){//удаляем уже отключенные
+                            if(!tmpClient.contains(name)) {
+                                File file = new File(directory + name);
+                                deleteDir(file);
+                                dynamicFolders.remove(name);
+                            }
+                        }
+                        myDynamicFolders.clear();
+                        for (String item : tmpClient) {
+                            if (!dynamicFolders.contains(item))
+                                dynamicFolders.add(item);
+                            myDynamicFolders.add(item);//чтобы себе не отправлять
+                        }
+                        sendList(dynamicFolders);//отправка своего общего списка
+                        ////
+                        System.out.println(" - MDF : " + myDynamicFolders);
+                        System.out.println(" - DF : " + dynamicFolders);
+                        ////
+                        for (int i = 0; i < myDynamicFolders.size(); i++) {//принимаем файлы
+                            String folder = in.readUTF();//имя папки
+                            int numberOfFiles = in.read();
+                            for (int j = 0; j < numberOfFiles; j++){
+                                String string;
+                                string = in.readUTF();
+                                if (string.contains("@sendfile")) {//принимаем файл
+                                    String fileName = folder + "/" + string.substring("@sendfile".length() + 1);
+                                    receiveFile(fileName);
+                                } else if (string.contains("@directory")) {
+                                    String dirName = folder + "/" + string.substring("@directory".length() + 1);
+                                    makeDir(directory + dirName + "/");
+                                }
+                            }
+                        }
+
+
                         myFiles.clear();
                         newDir = directory;
                         File dir = new File(directory);
                         readDirectory(dir);//заполнили свой список
+
+                        //удаляем динам. папки этого клиента
+                        for (int i = 0; i < myFiles.size(); i++){
+                            int begin = directory.length();
+                            int slash = myFiles.get(i).indexOf("/", begin + 1);
+                            if (slash == -1)
+                                slash = myFiles.get(i).length();
+                            String name = myFiles.get(i).substring(begin, slash);
+                            if (myDynamicFolders.contains(name)){
+                                myFiles.remove(i);
+                                i--;
+                            }
+                        }
+
                         //принимаем список клиента
-                        ArrayList<String> clientList = new ArrayList<>();;
+                        ArrayList<String> clientList = new ArrayList<>();
                         receiveList(clientList);
 
                         System.out.println("\n\tclientList");
@@ -155,11 +155,12 @@ public class ServerDispatcher extends Thread {
                         //принимаем ответ
                         conflictedFiles.clear();
                         receiveList(conflictedFiles);
-                        for (String str : conflictedFiles){
+                        for (String str : conflictedFiles) {
                             filesToClient.add(directory + str);
                         }
                         /////
-                        System.out.println("\n\tfilesToClient"); for (String str : filesToClient) System.out.println(str);
+                        System.out.println("\n\tfilesToClient");
+                        for (String str : filesToClient) System.out.println(str);
                         //отправляем файлы из filesToClient
                         out.write(filesToClient.size());//сколько файлов
                         sendAll(filesToClient);
@@ -168,7 +169,7 @@ public class ServerDispatcher extends Thread {
                         conflictedFiles.clear();
                         //принимаем файлы от клиента
                         int numberOfFiles = in.read();
-                        for(int i = 0; i < numberOfFiles; i++){
+                        for (int i = 0; i < numberOfFiles; i++) {
                             String string;
                             string = in.readUTF();
                             if (string.contains("@sendfile")) {//принимаем файл
@@ -208,7 +209,7 @@ public class ServerDispatcher extends Thread {
 
     private void sendList(ArrayList<String> list) throws IOException {
         out.write(list.size());
-        for (String str : list){
+        for (String str : list) {
             out.writeUTF(str);
         }
     }
@@ -305,14 +306,28 @@ public class ServerDispatcher extends Thread {
 
     private void readDirectory(File folder) {
         File[] list = folder.listFiles();//список того, что в папке folder
-        for (File file : list) {
-            if (file.isDirectory()) {
-                int end = newDir.length();
-                newDir = newDir + file.getName() + "/";
-                readDirectory(file);//рекурсия
-                newDir = newDir.substring(0, end);
+        if (list != null) {
+            for (File file : list) {
+                if (file.isDirectory()) {
+                    int end = newDir.length();
+                    newDir = newDir + file.getName() + "/";
+                    readDirectory(file);//рекурсия
+                    newDir = newDir.substring(0, end);
+                }
+                myFiles.add(newDir + file.getName());
             }
-            myFiles.add(newDir + file.getName());
         }
+    }
+
+    private void deleteDir(File dir) {
+        if (dir.isDirectory()) {
+            File[] list = dir.listFiles();
+            if (list != null) {
+                for (File file : list) {
+                    deleteDir(file);
+                }
+            }
+            dir.delete();
+        } else dir.delete();
     }
 }

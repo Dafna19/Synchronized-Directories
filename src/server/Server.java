@@ -9,8 +9,7 @@ import java.util.Date;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- *
- * сервер должен писать в лог (текстовый файл) о освоих действиях
+ * сервер пишет в лог (текстовый файл) о освоих действиях
  */
 //java Server port(0)
 public class Server {

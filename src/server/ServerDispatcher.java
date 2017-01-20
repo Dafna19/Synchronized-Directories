@@ -36,12 +36,16 @@ class ServerDispatcher extends Thread {
         directory = "server/";
         newDir = directory;
         File dir = new File(directory);
-        readDirectory(dir);//заполнили свой список
         try {
-            in = new DataInputStream(socket.getInputStream());
-            out = new DataOutputStream(socket.getOutputStream());
-        } catch (IOException e) {
-            e.printStackTrace();
+            readDirectory(dir);//заполнили свой список
+
+            try {
+                in = new DataInputStream(socket.getInputStream());
+                out = new DataOutputStream(socket.getOutputStream());
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        } catch (NullPointerException n) {
         }
     }
 
@@ -147,7 +151,6 @@ class ServerDispatcher extends Thread {
                         }
 
 
-
                         //отправляем список конфликтных
                         sendList(conflictedFiles);
                         //принимаем ответ
@@ -234,11 +237,11 @@ class ServerDispatcher extends Thread {
             outputFile.write(buf, 0, count);//записываем файл
             outputFile.flush();
             if (all == size) {
-               // System.out.println("received FULL size");
+                // System.out.println("received FULL size");
                 break;
             }
         }
-       // System.out.println("received \"" + fileName + "\" (" + all + " bytes)");
+        // System.out.println("received \"" + fileName + "\" (" + all + " bytes)");
         outputFile.close();
         logFile.write("\nReceived file \"" + fileName + "\" (" + all + " bytes) from ip: " +
                 socket.getLocalAddress() + " port: " + socket.getPort() +
@@ -246,7 +249,7 @@ class ServerDispatcher extends Thread {
         logFile.flush();
     }
 
-    private void makeDir(String path) {
+    protected void makeDir(String path) {
         int end = 0;
         while (true) {
             end = path.indexOf("/", end);

@@ -1,6 +1,8 @@
-package server;
+package test;
 
 import org.junit.Test;
+import main.server.ServerDispatcher;
+
 import java.io.File;
 
 import static org.junit.Assert.assertEquals;

@@ -1,4 +1,4 @@
-package server;
+package main.server;
 
 import java.io.*;
 import java.net.*;
@@ -10,7 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * здесь происходит взаимодействие с клиентом
  */
-class ServerDispatcher extends Thread {
+public class ServerDispatcher extends Thread {
     private ConcurrentHashMap<String, ArrayList<String>> allClients;
     private Socket socket;
     public DataInputStream in;
@@ -249,7 +249,7 @@ class ServerDispatcher extends Thread {
         logFile.flush();
     }
 
-    protected void makeDir(String path) {
+    public void makeDir(String path) {
         int end = 0;
         while (true) {
             end = path.indexOf("/", end);
